@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: gk_qna_app
+    ports:
+      - "8011:8011"
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - .:/code/app
