@@ -11,9 +11,9 @@ from mysql.connector import Error
 from app.schemas import (
     QuestionAddRequest, QuestionUpdateRequest, 
     AssessmentStartRequest, AssessmentEndRequest, 
-    CategoryCreate, CategoryUpdate, CategoryResponse,
+    CategoryCreate, CategoryUpdate, CategoryResponse, CategoryListResponse,
     ProfileUpdate, ProfileResponse,
-    UserAssessmentsSummaryResponse
+    UserAssessmentsSummaryResponse, QuestionListResponse, AssessmentResultsResponse
 )
 from app.database import get_db_connection
 
@@ -77,7 +77,7 @@ def get_profile(user_id: int):
         cursor.execute("SELECT * FROM xxed_gk_profiles_tab WHERE user_id = %s", (user_id,))
         profile = cursor.fetchone()
         if not profile:
-            raise HTTPException(status_code=404, detail="Profile not found")
+            raise HTTPException(status_code=404, detail="User profile does not exist.")
         if 'creation_date' in profile and profile['creation_date']:
             profile['creation_date'] = profile['creation_date'].isoformat()
             
@@ -88,6 +88,7 @@ def get_profile(user_id: int):
                 except json.JSONDecodeError:
                     profile['area_of_focus'] = []
                     
+        profile['message'] = "Profile fetched successfully"
         return profile
     except HTTPException:
         raise
@@ -120,14 +121,16 @@ def update_profile(user_id: int, req: ProfileUpdate):
         conn.close()
 
 # --- Categories ---
-@categories_router.get("", response_model=list[CategoryResponse])
+@categories_router.get("", response_model=CategoryListResponse)
 def get_categories():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("SELECT * FROM xxed_gk_categories_tab")
         categories = cursor.fetchall()
-        return categories
+        if not categories:
+            return {"message": "No categories found", "data": []}
+        return {"message": "Categories fetched successfully", "data": categories}
     except Error as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -191,14 +194,16 @@ def update_category(category_id: int, req: CategoryUpdate):
         conn.close()
 
 # --- Questions ---
-@questions_router.get("/category")
+@questions_router.get("/category", response_model=QuestionListResponse)
 def get_questions_by_category(category_id: int):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("SELECT * FROM xxed_gk_questions_tab WHERE category_id = %s", (category_id,))
         questions = cursor.fetchall()
-        return questions
+        if not questions:
+            return {"message": "No questions found for this category", "data": []}
+        return {"message": "Questions fetched successfully", "data": questions}
     except Error as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -290,7 +295,7 @@ def create_assessment(req: AssessmentStartRequest):
         profile = cursor.fetchone()
         
         if not profile or profile['area_of_focus'] is None:
-            raise HTTPException(status_code=400, detail="Please fill your GK profile first to complete it to 100%.")
+            raise HTTPException(status_code=400, detail="Please complete your GK profile first.")
             
         # 1. Quota Check
         today = datetime.now().date()
@@ -410,7 +415,7 @@ def create_assessment(req: AssessmentStartRequest):
                 shortfall -= len(extra_qs)
                 
         if not questions:
-            raise HTTPException(status_code=400, detail="No questions found for the given categories.")
+            raise HTTPException(status_code=400, detail="Insufficient questions available for the selected categories.")
             
         random.shuffle(questions)
             
@@ -612,7 +617,15 @@ def get_user_assessments(user_id: int):
             if ass['end_time']:
                 ass['end_time'] = ass['end_time'].isoformat()
                 
+        if not assessments:
+            return {
+                "message": "No assessments taken yet",
+                "total_assessments": 0,
+                "assessments": []
+            }
+                
         return {
+            "message": "Assessments fetched successfully",
             "total_assessments": len(assessments),
             "assessments": assessments
         }
@@ -622,12 +635,13 @@ def get_user_assessments(user_id: int):
         cursor.close()
         conn.close()
 
-@assessments_router.get("/results", responses={
+@assessments_router.get("/results", response_model=AssessmentResultsResponse, responses={
     200: {
         "description": "Assessment Results Details",
         "content": {
             "application/json": {
                 "example": {
+                    "message": "Results fetched successfully",
                     "assessment_summary": {
                         "gk_user_ass_id": 1,
                         "user_id": 101,
@@ -669,7 +683,7 @@ def get_assessment_results(gk_user_ass_id: int):
         """, (gk_user_ass_id,))
         assessment = cursor.fetchone()
         if not assessment:
-            raise HTTPException(status_code=404, detail="User Assessment not found")
+            raise HTTPException(status_code=404, detail="Assessment results not found.")
             
         cursor.execute("""
             SELECT u.gk_question_id, q.gk_question, q.option_a, q.option_b, q.option_c, q.option_d,
@@ -682,6 +696,7 @@ def get_assessment_results(gk_user_ass_id: int):
         answers = cursor.fetchall()
         
         return {
+            "message": "Results fetched successfully",
             "assessment_summary": assessment,
             "details": answers
         }

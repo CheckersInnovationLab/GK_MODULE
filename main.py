@@ -21,6 +21,17 @@ app.include_router(routers.assessments_router)
 app.include_router(routers.categories_router)
 app.include_router(routers.profiles_router)
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import HTTPException
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"message": exc.detail},
+    )
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the GK Package APIs"}

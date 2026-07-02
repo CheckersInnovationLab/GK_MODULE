@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from pydantic import BaseModel
 
 class QuestionAddRequest(BaseModel):
@@ -48,6 +48,10 @@ class CategoryResponse(BaseModel):
     description: Optional[str] = None
     status: int
 
+class CategoryListResponse(BaseModel):
+    message: Optional[str] = None
+    data: List[CategoryResponse]
+
 class AssessmentStartRequest(BaseModel):
     user_id: int
     assessment_type: str = "40M Standard"
@@ -62,6 +66,7 @@ class ProfileUpdate(BaseModel):
     area_of_focus: List[AreaOfFocusItem]
 
 class ProfileResponse(BaseModel):
+    message: Optional[str] = None
     gk_profile_id: int
     user_id: int
     user_name: Optional[str] = None
@@ -82,6 +87,7 @@ class UserAssessmentSummaryItem(BaseModel):
     status: str
 
 class UserAssessmentsSummaryResponse(BaseModel):
+    message: Optional[str] = None
     total_assessments: int
     assessments: List[UserAssessmentSummaryItem]
 
@@ -92,5 +98,14 @@ class AnswerSubmit(BaseModel):
 
 class AssessmentEndRequest(BaseModel):
     answers: List[AnswerSubmit]
+
+class QuestionListResponse(BaseModel):
+    message: Optional[str] = None
+    data: List[Dict[str, Any]]
+
+class AssessmentResultsResponse(BaseModel):
+    message: Optional[str] = None
+    assessment_summary: Dict[str, Any]
+    details: List[Dict[str, Any]]
 
 
