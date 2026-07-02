@@ -66,7 +66,7 @@ def _ensure_profile_exists(cursor, user_id: int):
         return True
     return False
 
-@profiles_router.get("/{user_id}", response_model=ProfileResponse)
+@profiles_router.get("", response_model=ProfileResponse)
 def get_profile(user_id: int):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -98,7 +98,7 @@ def get_profile(user_id: int):
         cursor.close()
         conn.close()
 
-@profiles_router.put("/{user_id}")
+@profiles_router.put("")
 def update_profile(user_id: int, req: ProfileUpdate):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -153,7 +153,7 @@ def create_category(req: CategoryCreate):
         cursor.close()
         conn.close()
 
-@categories_router.put("/{category_id}")
+@categories_router.put("")
 def update_category(category_id: int, req: CategoryUpdate):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -191,7 +191,7 @@ def update_category(category_id: int, req: CategoryUpdate):
         conn.close()
 
 # --- Questions ---
-@questions_router.get("/category/{category_id}")
+@questions_router.get("/category")
 def get_questions_by_category(category_id: int):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -228,7 +228,7 @@ def add_question(req: QuestionAddRequest):
         cursor.close()
         conn.close()
 
-@questions_router.put("/{gk_question_id}")
+@questions_router.put("")
 def update_question(gk_question_id: int, req: QuestionUpdateRequest):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -262,7 +262,7 @@ def update_question(gk_question_id: int, req: QuestionUpdateRequest):
         cursor.close()
         conn.close()
 
-@questions_router.delete("/{gk_question_id}")
+@questions_router.delete("")
 def delete_question(gk_question_id: int):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -481,7 +481,7 @@ def create_assessment(req: AssessmentStartRequest):
         conn.close()
 
 
-@assessments_router.post("/{gk_user_ass_id}/end")
+@assessments_router.post("/end")
 def end_assessment(gk_user_ass_id: int, req: AssessmentEndRequest):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -590,7 +590,7 @@ def end_assessment(gk_user_ass_id: int, req: AssessmentEndRequest):
         cursor.close()
         conn.close()
 
-@assessments_router.get("/user/{user_id}", response_model=UserAssessmentsSummaryResponse)
+@assessments_router.get("/user", response_model=UserAssessmentsSummaryResponse)
 def get_user_assessments(user_id: int):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -622,7 +622,7 @@ def get_user_assessments(user_id: int):
         cursor.close()
         conn.close()
 
-@assessments_router.get("/{gk_user_ass_id}/results", responses={
+@assessments_router.get("/results", responses={
     200: {
         "description": "Assessment Results Details",
         "content": {
