@@ -347,6 +347,18 @@ def create_assessment(req: AssessmentStartRequest):
         elif req.creation_mode == "Custom":
             if not req.category_ids:
                 raise HTTPException(status_code=400, detail="category_ids must be provided for Custom mode.")
+                
+            format_strings = ','.join(['%s'] * len(req.category_ids))
+            cursor.execute(f"SELECT category_id FROM xxed_gk_categories_tab WHERE category_id IN ({format_strings}) AND status = 1", tuple(req.category_ids))
+            valid_categories = cursor.fetchall()
+            valid_category_ids = [cat['category_id'] for cat in valid_categories]
+            
+            invalid_ids = [cid for cid in req.category_ids if cid not in valid_category_ids]
+            if invalid_ids:
+                count = len(invalid_ids)
+                cat_word = "category is" if count == 1 else "categories are"
+                raise HTTPException(status_code=400, detail=f"{count} selected {cat_word} invalid or currently inactive. Please refresh your selection.")
+                
             equal_pct = 100.0 / len(req.category_ids)
             category_percentages = [{"category_id": cid, "percentage": equal_pct} for cid in req.category_ids]
         else:
