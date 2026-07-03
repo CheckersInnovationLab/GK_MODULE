@@ -433,7 +433,11 @@ def create_assessment(req: AssessmentStartRequest):
             
         actual_total = len(questions)
         total_marks = actual_total * 1
-        total_time_seconds = int(actual_total * 1.5 * 60)
+        
+        if req.assessment_type == "100M Advanced":
+            total_time_seconds = 120 * 60
+        else:
+            total_time_seconds = 60 * 60
         
         # 5. Create Assessment Definition
         cursor.execute("SELECT MAX(gk_assessment_id) as last_id FROM xxed_gk_assessment_tab")
