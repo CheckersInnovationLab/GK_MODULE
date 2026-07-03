@@ -723,3 +723,61 @@ def get_assessment_results(gk_user_ass_id: int):
         conn.close()
 
 
+@assessments_router.delete("/user-assessment")
+def delete_user_assessment(gk_user_ass_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Check if exists
+        cursor.execute("SELECT * FROM xxed_gk_user_assessment_tab WHERE gk_user_ass_id = %s", (gk_user_ass_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="User Assessment not found.")
+            
+        # Manage foreign key constraints explicitly: delete child records first
+        cursor.execute("DELETE FROM xxed_gk_user_answers_tab WHERE gk_user_ass_id = %s", (gk_user_ass_id,))
+        
+        # Delete user assessment
+        cursor.execute("DELETE FROM xxed_gk_user_assessment_tab WHERE gk_user_ass_id = %s", (gk_user_ass_id,))
+        
+        conn.commit()
+        return {"message": "User Assessment and related answers deleted successfully."}
+    except Error as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@assessments_router.delete("/assessment")
+def delete_assessment(gk_assessment_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Check if exists
+        cursor.execute("SELECT * FROM xxed_gk_assessment_tab WHERE gk_assessment_id = %s", (gk_assessment_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Assessment not found.")
+            
+        # Manage foreign key constraints explicitly: find all related user assessments
+        cursor.execute("SELECT gk_user_ass_id FROM xxed_gk_user_assessment_tab WHERE gk_assessment_id = %s", (gk_assessment_id,))
+        user_assessments = cursor.fetchall()
+        
+        # Delete all related answers for each user assessment
+        for ua in user_assessments:
+            cursor.execute("DELETE FROM xxed_gk_user_answers_tab WHERE gk_user_ass_id = %s", (ua['gk_user_ass_id'],))
+            
+        # Delete all user assessments for this assessment
+        cursor.execute("DELETE FROM xxed_gk_user_assessment_tab WHERE gk_assessment_id = %s", (gk_assessment_id,))
+        
+        # Delete the main assessment
+        cursor.execute("DELETE FROM xxed_gk_assessment_tab WHERE gk_assessment_id = %s", (gk_assessment_id,))
+        
+        conn.commit()
+        return {"message": "Assessment and all related user assessments/answers deleted successfully."}
+    except Error as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
