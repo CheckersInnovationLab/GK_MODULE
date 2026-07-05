@@ -392,42 +392,18 @@ def create_assessment(req: AssessmentStartRequest):
                 ORDER BY RAND() LIMIT %s
             """
             cursor.execute(query, (ct["category_id"], ct["target"]))
-            questions.extend(cursor.fetchall())
+            fetched = cursor.fetchall()
             
-        shortfall = total_questions - len(questions)
-        if shortfall > 0:
-            category_targets.sort(key=lambda x: x["percentage"], reverse=True)
-            for ct in category_targets:
-                if shortfall <= 0:
-                    break
-                    
-                already_fetched_ids = [q['gk_question_id'] for q in questions]
-                if not already_fetched_ids:
-                     # If none fetched yet, just fetch any
-                     query = """
-                         SELECT gk_question_id, gk_question, option_a, option_b, option_c, option_d, correct_answer 
-                         FROM xxed_gk_questions_tab 
-                         WHERE category_id = %s 
-                         ORDER BY RAND() LIMIT %s
-                     """
-                     cursor.execute(query, (ct["category_id"], shortfall))
-                else:
-                     format_strings = ','.join(['%s'] * len(already_fetched_ids))
-                     query = f"""
-                         SELECT gk_question_id, gk_question, option_a, option_b, option_c, option_d, correct_answer 
-                         FROM xxed_gk_questions_tab 
-                         WHERE category_id = %s AND gk_question_id NOT IN ({format_strings})
-                         ORDER BY RAND() LIMIT %s
-                     """
-                     params = [ct["category_id"]] + already_fetched_ids + [shortfall]
-                     cursor.execute(query, tuple(params))
-                     
-                extra_qs = cursor.fetchall()
-                questions.extend(extra_qs)
-                shortfall -= len(extra_qs)
+            if len(fetched) < ct["target"]:
+                cursor.execute("SELECT category_name FROM xxed_gk_categories_tab WHERE category_id = %s", (ct["category_id"],))
+                cat_row = cursor.fetchone()
+                cat_name = cat_row['category_name'] if cat_row else f"ID {ct['category_id']}"
+                raise HTTPException(status_code=400, detail=f"Insufficient questions for category '{cat_name}'. Needed {ct['target']}, but only found {len(fetched)}.")
                 
+            questions.extend(fetched)
+            
         if not questions:
-            raise HTTPException(status_code=400, detail="Insufficient questions available for the selected categories.")
+            raise HTTPException(status_code=400, detail="No questions available for the selected categories.")
             
         random.shuffle(questions)
             
@@ -677,6 +653,7 @@ def get_user_assessments(user_id: int):
                             "option_c": "Madrid",
                             "option_d": "Rome",
                             "correct_answer": "B",
+                            "gk_answer": "Paris is the capital and most populous city of France.",
                             "user_answer": "B",
                             "status": "correct",
                             "time_taken_seconds": 12
