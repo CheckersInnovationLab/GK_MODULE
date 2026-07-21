@@ -77,6 +77,8 @@ class UserAssessmentSummaryItem(BaseModel):
     gk_user_ass_id: int
     gk_assessment_id: int
     gk_assessment_name: str
+    assessment_type: Optional[str] = None
+    creation_mode: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     total_score: int

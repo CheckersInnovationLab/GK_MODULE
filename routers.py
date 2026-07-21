@@ -423,10 +423,10 @@ def create_assessment(req: AssessmentStartRequest):
         
         insert_ass_query = """
             INSERT INTO xxed_gk_assessment_tab 
-            (gk_assessment_name, gk_total_marks, gk_total_time, gk_total_question, gk_created_by, gk_status) 
-            VALUES (%s, %s, %s, %s, %s, 'active')
+            (gk_assessment_name, assessment_type, creation_mode, gk_total_marks, gk_total_time, gk_total_question, gk_created_by, gk_status) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'active')
         """
-        cursor.execute(insert_ass_query, (gk_assessment_name, total_marks, total_time_seconds, actual_total, req.user_id))
+        cursor.execute(insert_ass_query, (gk_assessment_name, req.assessment_type, req.creation_mode, total_marks, total_time_seconds, actual_total, req.user_id))
         gk_assessment_id = cursor.lastrowid
         
         # 6. Start User Assessment
@@ -594,6 +594,7 @@ def get_user_assessments(user_id: int):
     try:
         cursor.execute("""
             SELECT ua.gk_user_ass_id, a.gk_assessment_id, a.gk_assessment_name,
+                   a.assessment_type, a.creation_mode,
                    ua.start_time, ua.end_time, ua.total_score, ua.correct_count, 
                    ua.incorrect_count, ua.skipped_count, ua.accuracy, ua.status
             FROM xxed_gk_user_assessment_tab ua
@@ -669,7 +670,7 @@ def get_assessment_results(gk_user_ass_id: int):
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("""
-            SELECT ua.*, a.gk_assessment_name, a.gk_total_marks, a.gk_total_time 
+            SELECT ua.*, a.gk_assessment_name, a.assessment_type, a.creation_mode, a.gk_total_marks, a.gk_total_time 
             FROM xxed_gk_user_assessment_tab ua
             JOIN xxed_gk_assessment_tab a ON ua.gk_assessment_id = a.gk_assessment_id
             WHERE ua.gk_user_ass_id = %s
