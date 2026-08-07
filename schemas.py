@@ -57,6 +57,7 @@ class AssessmentStartRequest(BaseModel):
     assessment_type: str = "40M Standard"
     creation_mode: str = "Normal"
     category_ids: Optional[List[int]] = []
+    competition_id: Optional[int] = None
 
 class AreaOfFocusItem(BaseModel):
     category_id: int

@@ -290,145 +290,191 @@ def create_assessment(req: AssessmentStartRequest):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # 0. Profile Check (100% Complete)
-        cursor.execute("SELECT area_of_focus FROM xxed_gk_profiles_tab WHERE user_id = %s", (req.user_id,))
-        profile = cursor.fetchone()
-        
-        if not profile or profile['area_of_focus'] is None:
-            raise HTTPException(status_code=400, detail="Please complete your GK profile first.")
+        if req.competition_id:
+            cursor.execute("SELECT title, start_time, end_time, total_time, questions_config FROM xxed_competitions_tab WHERE competition_id = %s", (req.competition_id,))
+            comp = cursor.fetchone()
+            if not comp:
+                raise HTTPException(status_code=404, detail="Competition not found")
             
-        # 1. Quota Check
-        today = datetime.now().date()
-        cursor.execute("SELECT quota_id, start_quota_date, quota_date, used_count, max_limit, status FROM xxed_gk_assessment_quotas_tab WHERE user_id = %s", (req.user_id,))
-        quota = cursor.fetchone()
-        
-        if not quota:
+            from datetime import datetime, timezone
             now = datetime.now()
-            cursor.execute("INSERT INTO xxed_gk_assessment_quotas_tab (user_id, start_quota_date, quota_date, used_count, max_limit, status) VALUES (%s, %s, %s, 0, 2, 1)", (req.user_id, now, today))
-            used_count = 0
-            max_limit = 2
-        else:
-            if quota['status'] == 0:
-                raise HTTPException(status_code=403, detail="Assessments are disabled for this user.")
+            if comp['start_time'] and now < comp['start_time']:
+                raise HTTPException(status_code=400, detail="Competition has not started yet")
+            if comp['end_time'] and now > comp['end_time']:
+                raise HTTPException(status_code=400, detail="Competition has ended")
                 
-            quota_date = quota['quota_date']
-            used_count = quota['used_count']
-            max_limit = quota['max_limit']
-            
-            if quota_date < today:
-                used_count = 0
-                cursor.execute("UPDATE xxed_gk_assessment_quotas_tab SET used_count = 0, quota_date = %s WHERE user_id = %s", (today, req.user_id))
-            
-        if used_count >= max_limit:
-            raise HTTPException(status_code=429, detail=f"Daily assessment quota reached. Maximum {max_limit} allowed.")
-
-        # 2. Tier Selection
-        total_questions = 40
-        if req.assessment_type == "100M Advanced":
-            total_questions = 100
-            
-        # 3. Mode Selection
-        category_percentages = []
-        if req.creation_mode == "Normal":
-            area_of_focus = []
-            if profile.get('area_of_focus'):
-                if isinstance(profile['area_of_focus'], str):
-                    try:
-                        area_of_focus = json.loads(profile['area_of_focus'])
-                    except json.JSONDecodeError:
-                        area_of_focus = []
-                else:
-                    area_of_focus = profile['area_of_focus']
+            import json
+            q_ids = []
+            if comp['questions_config']:
+                try:
+                    q_ids = json.loads(comp['questions_config'])
+                except:
+                    q_ids = []
                     
-            if not area_of_focus:
-                 raise HTTPException(status_code=400, detail="Area of focus is not set in profile.")
-            category_percentages = area_of_focus
-            
-        elif req.creation_mode == "Custom":
-            if not req.category_ids:
-                raise HTTPException(status_code=400, detail="category_ids must be provided for Custom mode.")
+            if not q_ids:
+                raise HTTPException(status_code=400, detail="Competition has no configured questions")
                 
-            format_strings = ','.join(['%s'] * len(req.category_ids))
-            cursor.execute(f"SELECT category_id FROM xxed_gk_categories_tab WHERE category_id IN ({format_strings}) AND status = 1", tuple(req.category_ids))
-            valid_categories = cursor.fetchall()
-            valid_category_ids = [cat['category_id'] for cat in valid_categories]
+            format_strings = ','.join(['%s'] * len(q_ids))
+            cursor.execute(f"SELECT gk_question_id, gk_question, option_a, option_b, option_c, option_d, correct_answer FROM xxed_gk_questions_tab WHERE gk_question_id IN ({format_strings})", tuple(q_ids))
+            questions_raw = cursor.fetchall()
             
-            invalid_ids = [cid for cid in req.category_ids if cid not in valid_category_ids]
-            if invalid_ids:
-                count = len(invalid_ids)
-                cat_word = "category is" if count == 1 else "categories are"
-                raise HTTPException(status_code=400, detail=f"{count} selected {cat_word} invalid or currently inactive. Please refresh your selection.")
-                
-            equal_pct = 100.0 / len(req.category_ids)
-            category_percentages = [{"category_id": cid, "percentage": equal_pct} for cid in req.category_ids]
+            q_dict = {q['gk_question_id']: q for q in questions_raw}
+            questions = [q_dict[qid] for qid in q_ids if qid in q_dict]
+            
+            actual_total = len(questions)
+            total_marks = actual_total * 1
+            total_time_seconds = comp['total_time'] * 60 if comp['total_time'] else 60 * 60
+            
+            cursor.execute("SELECT gk_assessment_id, gk_assessment_name FROM xxed_gk_assessment_tab WHERE gk_assessment_name = %s ORDER BY gk_assessment_id DESC LIMIT 1", (comp['title'],))
+            ass_row = cursor.fetchone()
+            if not ass_row:
+                raise HTTPException(status_code=404, detail="GK Assessment Definition not found for this competition")
+            gk_assessment_id = ass_row['gk_assessment_id']
+            gk_assessment_name = ass_row['gk_assessment_name']
+            
+            cursor.execute("SELECT participant_id FROM xxed_competition_participants_tab WHERE competition_id = %s AND user_id = %s", (req.competition_id, req.user_id))
+            if not cursor.fetchone():
+                cursor.execute("INSERT INTO xxed_competition_participants_tab (competition_id, user_id, status) VALUES (%s, %s, 'started')", (req.competition_id, req.user_id))
         else:
-            raise HTTPException(status_code=400, detail="Invalid creation_mode. Must be Normal or Custom.")
-
-        # 4. Fetch Questions
-        questions = []
-        
-        category_targets = []
-        for cat in category_percentages:
-            target = int(round((cat['percentage'] / 100.0) * total_questions))
-            category_targets.append({
-                "category_id": cat["category_id"],
-                "target": target,
-                "percentage": cat["percentage"]
-            })
+            # 0. Profile Check (100% Complete)
+            cursor.execute("SELECT area_of_focus FROM xxed_gk_profiles_tab WHERE user_id = %s", (req.user_id,))
+            profile = cursor.fetchone()
             
-        current_target_total = sum(ct["target"] for ct in category_targets)
-        if current_target_total != total_questions and category_targets:
-            category_targets.sort(key=lambda x: x["percentage"], reverse=True)
-            category_targets[0]["target"] += (total_questions - current_target_total)
-            
-        for ct in category_targets:
-            if ct["target"] <= 0:
-                continue
+            if not profile or profile['area_of_focus'] is None:
+                raise HTTPException(status_code=400, detail="Please complete your GK profile first.")
                 
-            query = """
-                SELECT gk_question_id, gk_question, option_a, option_b, option_c, option_d, correct_answer 
-                FROM xxed_gk_questions_tab 
-                WHERE category_id = %s 
-                ORDER BY RAND() LIMIT %s
+            # 1. Quota Check
+            today = datetime.now().date()
+            cursor.execute("SELECT quota_id, start_quota_date, quota_date, used_count, max_limit, status FROM xxed_gk_assessment_quotas_tab WHERE user_id = %s", (req.user_id,))
+            quota = cursor.fetchone()
+            
+            if not quota:
+                now = datetime.now()
+                cursor.execute("INSERT INTO xxed_gk_assessment_quotas_tab (user_id, start_quota_date, quota_date, used_count, max_limit, status) VALUES (%s, %s, %s, 0, 2, 1)", (req.user_id, now, today))
+                used_count = 0
+                max_limit = 2
+            else:
+                if quota['status'] == 0:
+                    raise HTTPException(status_code=403, detail="Assessments are disabled for this user.")
+                    
+                quota_date = quota['quota_date']
+                used_count = quota['used_count']
+                max_limit = quota['max_limit']
+                
+                if quota_date < today:
+                    used_count = 0
+                    cursor.execute("UPDATE xxed_gk_assessment_quotas_tab SET used_count = 0, quota_date = %s WHERE user_id = %s", (today, req.user_id))
+                
+            if used_count >= max_limit:
+                raise HTTPException(status_code=429, detail=f"Daily assessment quota reached. Maximum {max_limit} allowed.")
+    
+            # 2. Tier Selection
+            total_questions = 40
+            if req.assessment_type == "100M Advanced":
+                total_questions = 100
+                
+            # 3. Mode Selection
+            category_percentages = []
+            if req.creation_mode == "Normal":
+                area_of_focus = []
+                if profile.get('area_of_focus'):
+                    if isinstance(profile['area_of_focus'], str):
+                        try:
+                            area_of_focus = json.loads(profile['area_of_focus'])
+                        except json.JSONDecodeError:
+                            area_of_focus = []
+                    else:
+                        area_of_focus = profile['area_of_focus']
+                        
+                if not area_of_focus:
+                     raise HTTPException(status_code=400, detail="Area of focus is not set in profile.")
+                category_percentages = area_of_focus
+                
+            elif req.creation_mode == "Custom":
+                if not req.category_ids:
+                    raise HTTPException(status_code=400, detail="category_ids must be provided for Custom mode.")
+                    
+                format_strings = ','.join(['%s'] * len(req.category_ids))
+                cursor.execute(f"SELECT category_id FROM xxed_gk_categories_tab WHERE category_id IN ({format_strings}) AND status = 1", tuple(req.category_ids))
+                valid_categories = cursor.fetchall()
+                valid_category_ids = [cat['category_id'] for cat in valid_categories]
+                
+                invalid_ids = [cid for cid in req.category_ids if cid not in valid_category_ids]
+                if invalid_ids:
+                    count = len(invalid_ids)
+                    cat_word = "category is" if count == 1 else "categories are"
+                    raise HTTPException(status_code=400, detail=f"{count} selected {cat_word} invalid or currently inactive. Please refresh your selection.")
+                    
+                equal_pct = 100.0 / len(req.category_ids)
+                category_percentages = [{"category_id": cid, "percentage": equal_pct} for cid in req.category_ids]
+            else:
+                raise HTTPException(status_code=400, detail="Invalid creation_mode. Must be Normal or Custom.")
+    
+            # 4. Fetch Questions
+            questions = []
+            
+            category_targets = []
+            for cat in category_percentages:
+                target = int(round((cat['percentage'] / 100.0) * total_questions))
+                category_targets.append({
+                    "category_id": cat["category_id"],
+                    "target": target,
+                    "percentage": cat["percentage"]
+                })
+                
+            current_target_total = sum(ct["target"] for ct in category_targets)
+            if current_target_total != total_questions and category_targets:
+                category_targets.sort(key=lambda x: x["percentage"], reverse=True)
+                category_targets[0]["target"] += (total_questions - current_target_total)
+                
+            for ct in category_targets:
+                if ct["target"] <= 0:
+                    continue
+                    
+                query = """
+                    SELECT gk_question_id, gk_question, option_a, option_b, option_c, option_d, correct_answer 
+                    FROM xxed_gk_questions_tab 
+                    WHERE category_id = %s 
+                    ORDER BY RAND() LIMIT %s
+                """
+                cursor.execute(query, (ct["category_id"], ct["target"]))
+                fetched = cursor.fetchall()
+                
+                if len(fetched) < ct["target"]:
+                    cursor.execute("SELECT category_name FROM xxed_gk_categories_tab WHERE category_id = %s", (ct["category_id"],))
+                    cat_row = cursor.fetchone()
+                    cat_name = cat_row['category_name'] if cat_row else f"ID {ct['category_id']}"
+                    raise HTTPException(status_code=400, detail=f"Insufficient questions for category '{cat_name}'. Needed {ct['target']}, but only found {len(fetched)}.")
+                    
+                questions.extend(fetched)
+                
+            if not questions:
+                raise HTTPException(status_code=400, detail="No questions available for the selected categories.")
+                
+            random.shuffle(questions)
+                
+            actual_total = len(questions)
+            total_marks = actual_total * 1
+            
+            if req.assessment_type == "100M Advanced":
+                total_time_seconds = 120 * 60
+            else:
+                total_time_seconds = 60 * 60
+            
+            # 5. Create Assessment Definition
+            cursor.execute("SELECT MAX(gk_assessment_id) as last_id FROM xxed_gk_assessment_tab")
+            last_id_row = cursor.fetchone()
+            last_id = last_id_row['last_id'] if last_id_row and last_id_row['last_id'] else 0
+            gk_assessment_name = f"GK-Exam-{last_id + 1}"
+            
+            insert_ass_query = """
+                INSERT INTO xxed_gk_assessment_tab 
+                (gk_assessment_name, assessment_type, creation_mode, gk_total_marks, gk_total_time, gk_total_question, gk_created_by, gk_status) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'active')
             """
-            cursor.execute(query, (ct["category_id"], ct["target"]))
-            fetched = cursor.fetchall()
+            cursor.execute(insert_ass_query, (gk_assessment_name, req.assessment_type, req.creation_mode, total_marks, total_time_seconds, actual_total, req.user_id))
+            gk_assessment_id = cursor.lastrowid
             
-            if len(fetched) < ct["target"]:
-                cursor.execute("SELECT category_name FROM xxed_gk_categories_tab WHERE category_id = %s", (ct["category_id"],))
-                cat_row = cursor.fetchone()
-                cat_name = cat_row['category_name'] if cat_row else f"ID {ct['category_id']}"
-                raise HTTPException(status_code=400, detail=f"Insufficient questions for category '{cat_name}'. Needed {ct['target']}, but only found {len(fetched)}.")
-                
-            questions.extend(fetched)
-            
-        if not questions:
-            raise HTTPException(status_code=400, detail="No questions available for the selected categories.")
-            
-        random.shuffle(questions)
-            
-        actual_total = len(questions)
-        total_marks = actual_total * 1
-        
-        if req.assessment_type == "100M Advanced":
-            total_time_seconds = 120 * 60
-        else:
-            total_time_seconds = 60 * 60
-        
-        # 5. Create Assessment Definition
-        cursor.execute("SELECT MAX(gk_assessment_id) as last_id FROM xxed_gk_assessment_tab")
-        last_id_row = cursor.fetchone()
-        last_id = last_id_row['last_id'] if last_id_row and last_id_row['last_id'] else 0
-        gk_assessment_name = f"GK-Exam-{last_id + 1}"
-        
-        insert_ass_query = """
-            INSERT INTO xxed_gk_assessment_tab 
-            (gk_assessment_name, assessment_type, creation_mode, gk_total_marks, gk_total_time, gk_total_question, gk_created_by, gk_status) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'active')
-        """
-        cursor.execute(insert_ass_query, (gk_assessment_name, req.assessment_type, req.creation_mode, total_marks, total_time_seconds, actual_total, req.user_id))
-        gk_assessment_id = cursor.lastrowid
-        
         # 6. Start User Assessment
         start_time = datetime.now()
         insert_user_ass_query = """
