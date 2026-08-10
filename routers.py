@@ -291,7 +291,7 @@ def create_assessment(req: AssessmentStartRequest):
     cursor = conn.cursor(dictionary=True)
     try:
         if req.competition_id:
-            cursor.execute("SELECT title, start_time, end_time, total_time, questions_config FROM xxed_competitions_tab WHERE competition_id = %s", (req.competition_id,))
+            cursor.execute("SELECT title, start_time, end_time, total_time, questions_config, fee_type FROM xxed_competitions_tab WHERE competition_id = %s", (req.competition_id,))
             comp = cursor.fetchone()
             if not comp:
                 raise HTTPException(status_code=404, detail="Competition not found")
@@ -302,6 +302,11 @@ def create_assessment(req: AssessmentStartRequest):
                 raise HTTPException(status_code=400, detail="Competition has not started yet")
             if comp['end_time'] and now > comp['end_time']:
                 raise HTTPException(status_code=400, detail="Competition has ended")
+                
+            if comp.get('fee_type') and comp['fee_type'].lower() == 'paid':
+                cursor.execute("SELECT purchase_id FROM xxed_competition_purchases_tab WHERE competition_id = %s AND user_id = %s AND payment_status = 'Success'", (req.competition_id, req.user_id))
+                if not cursor.fetchone():
+                    raise HTTPException(status_code=403, detail="Payment required to join this competition. Please enroll and pay the fees.")
                 
             import json
             q_ids = []
@@ -805,3 +810,5 @@ def delete_assessment(gk_assessment_id: int):
     finally:
         cursor.close()
         conn.close()
+
+
