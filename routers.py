@@ -1,10 +1,11 @@
+from datetime import timedelta
 import os
 import json
 import time
 import random
 import string
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, status
 from mysql.connector import Error
 
@@ -57,7 +58,7 @@ def _ensure_profile_exists(cursor, user_id: int):
             (user_id, user_name)
         )
         
-        now = datetime.now()
+        now = (datetime.utcnow() + timedelta(hours=5, minutes=30))
         today = now.date()
         cursor.execute(
             "INSERT INTO xxed_gk_assessment_quotas_tab (user_id, start_quota_date, quota_date, used_count, max_limit, status) VALUES (%s, %s, %s, 0, 2, 1)",
@@ -296,8 +297,8 @@ def create_assessment(req: AssessmentStartRequest):
             if not comp:
                 raise HTTPException(status_code=404, detail="Competition not found")
             
-            from datetime import datetime, timezone
-            now = datetime.now()
+            from datetime import datetime, timedelta, timezone
+            now = (datetime.utcnow() + timedelta(hours=5, minutes=30))
             if comp['start_time'] and now < comp['start_time']:
                 raise HTTPException(status_code=400, detail="Competition has not started yet")
             if comp['end_time'] and now > comp['end_time']:
@@ -349,12 +350,12 @@ def create_assessment(req: AssessmentStartRequest):
                 raise HTTPException(status_code=400, detail="Please complete your GK profile first.")
                 
             # 1. Quota Check
-            today = datetime.now().date()
+            today = (datetime.utcnow() + timedelta(hours=5, minutes=30)).date()
             cursor.execute("SELECT quota_id, start_quota_date, quota_date, used_count, max_limit, status FROM xxed_gk_assessment_quotas_tab WHERE user_id = %s", (req.user_id,))
             quota = cursor.fetchone()
             
             if not quota:
-                now = datetime.now()
+                now = (datetime.utcnow() + timedelta(hours=5, minutes=30))
                 cursor.execute("INSERT INTO xxed_gk_assessment_quotas_tab (user_id, start_quota_date, quota_date, used_count, max_limit, status) VALUES (%s, %s, %s, 0, 2, 1)", (req.user_id, now, today))
                 used_count = 0
                 max_limit = 2
@@ -481,7 +482,7 @@ def create_assessment(req: AssessmentStartRequest):
             gk_assessment_id = cursor.lastrowid
             
         # 6. Start User Assessment
-        start_time = datetime.now()
+        start_time = (datetime.utcnow() + timedelta(hours=5, minutes=30))
         insert_user_ass_query = """
             INSERT INTO xxed_gk_user_assessment_tab 
             (user_id, gk_assessment_id, start_time, status) 
@@ -610,7 +611,7 @@ def end_assessment(gk_user_ass_id: int, req: AssessmentEndRequest):
         total_questions = int(stats['total_questions']) if stats['total_questions'] else 0
         
         accuracy = (correct_count / total_questions * 100) if total_questions > 0 else 0.0
-        end_time = datetime.now()
+        end_time = (datetime.utcnow() + timedelta(hours=5, minutes=30))
         
         update_assessment_query = """
             UPDATE xxed_gk_user_assessment_tab 

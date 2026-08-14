@@ -8,6 +8,8 @@ services:
       - "8011:8011"
     env_file:
       - .env
+    environment:
+      - TZ=Asia/Kolkata
     restart: unless-stopped
     volumes:
       - .:/code/app
