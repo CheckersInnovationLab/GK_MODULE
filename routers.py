@@ -297,7 +297,6 @@ def create_assessment(req: AssessmentStartRequest):
             if not comp:
                 raise HTTPException(status_code=404, detail="Competition not found")
             
-            from datetime import datetime, timedelta, timezone
             now = (datetime.utcnow() + timedelta(hours=5, minutes=30))
             if comp['start_time'] and now < comp['start_time']:
                 raise HTTPException(status_code=400, detail="Competition has not started yet")
@@ -308,8 +307,6 @@ def create_assessment(req: AssessmentStartRequest):
                 cursor.execute("SELECT purchase_id FROM xxed_competition_purchases_tab WHERE competition_id = %s AND user_id = %s AND payment_status = 'Success'", (req.competition_id, req.user_id))
                 if not cursor.fetchone():
                     raise HTTPException(status_code=403, detail="Payment required to join this competition. Please enroll and pay the fees.")
-                
-            import json
             q_ids = []
             if comp['questions_config']:
                 try:
